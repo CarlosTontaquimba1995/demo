@@ -1,7 +1,7 @@
-package com.example.demo.repository.impl;
+package factura.flow.repository.impl;
 
-import com.example.demo.dto.PendingInvoiceDto;
-import com.example.demo.repository.InvoiceRepositoryCustom;
+import factura.flow.dto.PendingInvoiceDto;
+import factura.flow.repository.InvoiceRepositoryCustom;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;

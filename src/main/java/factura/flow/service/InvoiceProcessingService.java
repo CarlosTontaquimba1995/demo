@@ -1,8 +1,8 @@
-package com.example.demo.service;
+package factura.flow.service;
 
-import com.example.demo.client.ExternalApiClient;
-import com.example.demo.dto.PendingInvoiceDto;
-import com.example.demo.repository.InvoiceRepository;
+import factura.flow.client.ExternalApiClient;
+import factura.flow.dto.PendingInvoiceDto;
+import factura.flow.repository.InvoiceRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;

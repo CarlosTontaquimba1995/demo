@@ -8,11 +8,11 @@
 		<version>3.5.6</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
-	<groupId>com.example</groupId>
-	<artifactId>demo</artifactId>
+	<groupId>factura.flow</groupId>
+	<artifactId>factura</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>demo</name>
-	<description>Demo project for Spring Boot</description>
+	<name>factura</name>
+	<description>Sistema de proceso de reintentos de facturación electrónica</description>
 	<url/>
 	<licenses>
 		<license/>

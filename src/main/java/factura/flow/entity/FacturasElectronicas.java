@@ -1,4 +1,4 @@
-package com.example.demo.entity;
+package factura.flow.entity;
 
 import jakarta.persistence.*;
 import lombok.Data;

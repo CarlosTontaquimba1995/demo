@@ -1,4 +1,4 @@
-package com.example.demo.dto;
+package factura.flow.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

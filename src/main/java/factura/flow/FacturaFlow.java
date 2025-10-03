@@ -1,4 +1,4 @@
-package com.example.demo;
+package factura.flow;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
@@ -29,13 +29,13 @@ import java.time.Duration;
 @SpringBootApplication
 @EnableScheduling
 @EnableAsync
-@EnableJpaRepositories(basePackages = "com.example.demo.repository")
-@EntityScan(basePackages = "com.example.demo.entity")
-@ComponentScan(basePackages = "com.example.demo")
-public class DemoApplication {
+@EnableJpaRepositories(basePackages = "factura.flow.repository")
+@EntityScan(basePackages = "factura.flow.entity")
+@ComponentScan(basePackages = "factura.flow")
+public class FacturaFlow {
 
 	public static void main(String[] args) {
-		SpringApplication.run(DemoApplication.class, args);
+		SpringApplication.run(FacturaFlow.class, args);
 	}
 
 	/**

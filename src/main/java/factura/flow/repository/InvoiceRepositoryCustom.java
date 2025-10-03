@@ -1,6 +1,6 @@
-package com.example.demo.repository;
+package factura.flow.repository;
 
-import com.example.demo.dto.PendingInvoiceDto;
+import factura.flow.dto.PendingInvoiceDto;
 
 import java.util.List;
 

@@ -1,6 +1,6 @@
-package com.example.demo.scheduler;
+package factura.flow.scheduler;
 
-import com.example.demo.service.InvoiceProcessingService;
+import factura.flow.service.InvoiceProcessingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;

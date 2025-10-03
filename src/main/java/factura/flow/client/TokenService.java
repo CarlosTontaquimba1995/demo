@@ -1,6 +1,6 @@
-package com.example.demo.client;
+package factura.flow.client;
 
-import com.example.demo.config.OAuth2TokenProperties;
+import factura.flow.config.OAuth2TokenProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

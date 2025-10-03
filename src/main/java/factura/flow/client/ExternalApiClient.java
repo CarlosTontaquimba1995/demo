@@ -1,4 +1,4 @@
-package com.example.demo.client;
+package factura.flow.client;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;

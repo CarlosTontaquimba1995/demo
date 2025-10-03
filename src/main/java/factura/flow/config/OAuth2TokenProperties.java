@@ -1,4 +1,4 @@
-package com.example.demo.config;
+package factura.flow.config;
 
 import lombok.Getter;
 import lombok.Setter;
