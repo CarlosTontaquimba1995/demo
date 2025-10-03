@@ -78,10 +78,6 @@ graph TD
 
 2. El sistema comenzará a procesar facturas automáticamente cada 5 segundos.
 
-3. Ver los logs para monitorear el progreso:
-   ```
-   tail -f logs/application.log
-   ```
 
 ## 🔄 Flujo de Procesamiento
 
@@ -137,14 +133,3 @@ El sistema implementa un manejo de errores en múltiples niveles:
 - **Gestión de Recursos**: Control de concurrencia y manejo eficiente de conexiones
 - **Monitoreo**: Métricas detalladas y logs para análisis de rendimiento
 
-## 🤝 Contribución
-
-1. Hacer fork del repositorio
-2. Crear una rama para la nueva característica (`git checkout -b feature/nueva-caracteristica`)
-3. Hacer commit de los cambios (`git commit -am 'Añadir nueva característica'`)
-4. Hacer push a la rama (`git push origin feature/nueva-caracteristica`)
-5. Crear un nuevo Pull Request
-
-## 📄 Licencia
-
-Este proyecto está bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) para más detalles.
