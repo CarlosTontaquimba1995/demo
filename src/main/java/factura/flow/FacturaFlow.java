@@ -23,8 +23,8 @@ import reactor.netty.http.client.HttpClient;
 import java.time.Duration;
 
 /**
- * Main application class for the Notarial Orchestrator.
- * Enables scheduling and async processing with virtual threads.
+ * Clase principal de la aplicación FacturaFlow.
+ * Habilita la programación de tareas y el procesamiento asíncrono con hilos virtuales.
  */
 @SpringBootApplication
 @EnableScheduling
@@ -39,10 +39,12 @@ public class FacturaFlow {
 	}
 
 	/**
-	 * Configures the WebClient for making HTTP requests to the external API.
+	 * Configura el WebClient para realizar peticiones HTTP a la API externa.
 	 * 
-	 * @param builder The WebClient builder
-	 * @return Configured WebClient instance
+	 * @param builder Constructor de WebClient
+	 * @param baseUrl URL base de la API externa
+	 * @param timeoutMs Tiempo de espera en milisegundos
+	 * @return Instancia configurada de WebClient
 	 */
 	@Bean
 	public WebClient webClient(WebClient.Builder builder,
@@ -58,7 +60,9 @@ public class FacturaFlow {
 	}
 
 	/**
-	 * Configures the Circuit Breaker registry.
+	 * Configura el registro del Circuit Breaker para manejo de fallos.
+	 * 
+	 * @return Instancia configurada de CircuitBreakerRegistry
 	 */
 	@Bean
 	public CircuitBreakerRegistry circuitBreakerRegistry() {
@@ -73,7 +77,9 @@ public class FacturaFlow {
 	}
 
 	/**
-	 * Configures the Rate Limiter registry.
+	 * Configura el registro del Limitador de Tasa para control de tráfico.
+	 * 
+	 * @return Instancia configurada de RateLimiterRegistry
 	 */
 	@Bean
 	public RateLimiterRegistry rateLimiterRegistry() {
@@ -87,7 +93,9 @@ public class FacturaFlow {
 	}
 
 	/**
-	 * Configures the Retry registry.
+	 * Configura el registro de Reintentos para operaciones fallidas.
+	 * 
+	 * @return Instancia configurada de RetryRegistry
 	 */
 	@Bean
 	public RetryRegistry retryRegistry() {

@@ -6,7 +6,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Entity representing the FacturasElectronicas table in the NOTARIAL_JAVA.Pesnot schema.
+ * Entidad que representa la tabla FacturasElectronicas en el esquema NOTARIAL_JAVA.Pesnot.
  */
 @Entity
 @Table(name = "FacturasElectronicas", schema = "Pesnot")

@@ -2,12 +2,12 @@ spring:
   application:
     name: notarial-orchestrator
   
-  # Enable Virtual Threads
+  # Habilita Hilos Virtuales
   threads:
     virtual:
       enabled: true
 
-  # Database Configuration
+  # Configuración de Base de Datos
   datasource:
     url: jdbc:sqlserver://10.1.27.16:1435;database=NOTARIAL_JAVA;instanceName=DESA07;encrypt=false
     username: DESA_PESNOT24
@@ -29,8 +29,8 @@ spring:
         jakarta.persistence.schema-generation.database.action: none
         hibernate.connection.default_schema: dbo
 
-# Resilience4j Configuration
-# Application Configuration
+# Configuración de Resilience4j
+# Configuración de la Aplicación
 app:
   security:
     oauth2:
@@ -39,8 +39,8 @@ app:
         client-id: cj-web-app
         username: evaluaciones-funcion-judicial
         password: Pesnot2024.
-        refresh-offset-seconds: 60  # 1 minute before expiration
-        refresh-check-interval-ms: 300000  # 5 minutes
+        refresh-offset-seconds: 60  # 1 minuto antes de la expiración
+        refresh-check-interval-ms: 300000  # 5 minutos
   external-api:
     base-url: https://desa-api-pesnot.funcionjudicial.gob.ec/SRI-SERVICE/api/sri/master/process-invoice
     timeout-ms: 5000
@@ -72,7 +72,7 @@ resilience4j:
         maxConcurrentCalls: 100
         maxWaitDuration: 0
 
-# Actuator for monitoring
+# Configuración de Actuator para monitoreo
 management:
   endpoint:
     health:
@@ -87,7 +87,7 @@ management:
     ratelimiters:
       enabled: true
 
-# Logging Configuration
+# Configuración de Logs
 logging:
   level:
     root: INFO

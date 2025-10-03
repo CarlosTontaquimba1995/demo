@@ -6,7 +6,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Entity representing the SolicitudActos table in the NOTARIAL_JAVA.Pesnot schema.
+ * Entidad que representa la tabla SolicitudActos en el esquema NOTARIAL_JAVA.Pesnot.
  */
 @Entity
 @Table(name = "SolicitudActos", schema = "Pesnot")

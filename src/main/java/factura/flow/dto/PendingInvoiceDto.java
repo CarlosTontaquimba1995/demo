@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * DTO representing a pending invoice record from the database.
+ * DTO que representa un registro de factura pendiente de la base de datos.
  */
 @Data
 @Builder
