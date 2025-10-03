@@ -88,6 +88,99 @@ graph TD
 5. **Comunicación con API**: Cada factura se envía a la API externa para su procesamiento.
 6. **Actualización**: Se registra el resultado del procesamiento.
 
+## 📊 Diagrama de Secuencia Detallado
+
+El siguiente diagrama muestra el flujo detallado de interacciones entre los componentes del sistema:
+
+```mermaid
+sequenceDiagram
+    participant Scheduler as InvoiceProcessingScheduler
+    participant Service as InvoiceProcessingService
+    participant Repository as InvoiceRepository
+    participant APIClient as ExternalApiClient
+    participant TokenService as TokenService
+    participant ExternalAPI as API Externa
+
+    rect rgb(0, 40, 100)
+        Note over Scheduler: Inicio del Proceso
+        Scheduler->>Service: processAllPendingInvoices()
+        
+        Service->>Repository: findPendingInvoiceDtos()
+        Repository-->>Service: List<PendingInvoiceDto>
+        
+        loop Por cada grupo de provincia
+            Service->>Service: processInvoicesForProvince(provincia, facturas)
+            
+            loop Por cada factura en la provincia
+                Service->>APIClient: processInvoice(idSolicitudActos)
+                
+                APIClient->>TokenService: getAccessToken()
+                TokenService-->>APIClient: token
+                
+                APIClient->>ExternalAPI: POST /facturas/{id}/procesar
+                ExternalAPI-->>APIClient: 200 OK
+                APIClient-->>Service: CompletableFuture<Void>
+            end
+        end
+        
+        Service-->>Scheduler: CompletableFuture<Void>
+        Note over Scheduler: Fin del Proceso
+    end
+
+    rect rgb(140, 0, 200)
+        Note right of TokenService: Gestión de Tokens
+        TokenService->>ExternalAPI: POST /token (si es necesario)
+        ExternalAPI-->>TokenService: access_token
+    end
+
+    rect rgb(100, 20, 40)
+        Note left of Repository: Acceso a Datos
+        Repository->>BaseDatos: SELECT ... FROM FacturasElectronicas
+        BaseDatos-->>Repository: ResultSet
+    end
+```
+
+### Explicación del Diagrama
+
+1. **Proceso Principal (Azul Oscuro)**:
+   - El `Scheduler` inicia el proceso llamando a `processAllPendingInvoices()` en el `Service`
+   - El `Service` consulta las facturas pendientes al `Repository`
+   - Para cada provincia, se procesan las facturas en paralelo
+   - Cada factura se envía al `APIClient` para su procesamiento
+   - El `APIClient` obtiene un token de autenticación del `TokenService`
+   - Se realiza la llamada a la API externa
+
+2. **Gestión de Tokens (Púrpura)**:
+   - El `TokenService` se encarga de obtener y renovar tokens de acceso
+   - Los tokens se almacenan en caché hasta su expiración
+
+3. **Acceso a Datos (Rojo Oscuro)**:
+   - El `Repository` consulta las facturas pendientes en la base de datos
+   - Los resultados se mapean a objetos DTO para su procesamiento
+
+### Flujo de Ejecución
+
+1. **Inicio del Proceso**:
+   - El `Scheduler` inicia el proceso cada 5 segundos
+   - Se verifica que no haya otra ejecución en curso
+
+2. **Obtención de Facturas**:
+   - Se consultan las facturas pendientes agrupadas por provincia
+   - Cada grupo se procesa en un hilo separado
+
+3. **Procesamiento Paralelo**:
+   - Cada provincia procesa sus facturas de forma independiente
+   - Las facturas dentro de cada provincia también se procesan en paralelo
+
+4. **Comunicación con API Externa**:
+   - Para cada factura, se obtiene un token de acceso
+   - Se envía la factura a la API externa
+   - Se manejan los errores de forma individual
+
+5. **Finalización**:
+   - Se espera a que todas las provincias terminen su procesamiento
+   - Se registran las estadísticas de ejecución
+
 ## 🧩 Componentes Principales
 
 ### 1. InvoiceProcessingScheduler
