@@ -15,100 +15,122 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
- * Service responsible for processing invoices in parallel by province.
+ * Servicio responsable del procesamiento de facturas en paralelo agrupadas por provincia.
+ * 
+ * Características principales:
+ * - Procesamiento paralelo por provincias
+ * - Uso de hilos virtuales para máxima eficiencia
+ * - Manejo de errores robusto
+ * - Reintentos automáticos en caso de fallos
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class InvoiceProcessingService {
 
+    // Repositorio para acceder a los datos de facturas
     private final InvoiceRepository invoiceRepository;
+    
+    // Cliente para comunicarse con la API externa
     private final ExternalApiClient externalApiClient;
 
     /**
-     * Processes all pending invoices, grouping them by province and processing each group in parallel.
+     * Procesa todas las facturas pendientes, agrupándolas por provincia y procesando cada grupo en paralelo.
      * 
-     * @return A CompletableFuture that completes when all invoices have been processed
+     * @return Un CompletableFuture que se completa cuando todas las facturas han sido procesadas
+     * 
+     * Flujo de ejecución:
+     * 1. Consulta las facturas pendientes en la base de datos
+     * 2. Agrupa las facturas por provincia
+     * 3. Procesa cada grupo de provincias en paralelo
+     * 4. Devuelve un futuro que se completa cuando terminan todos los procesos
      */
     @Transactional(readOnly = true)
     public CompletableFuture<Void> processAllPendingInvoices() {
-        log.info("Starting to process all pending invoices");
+        log.info("🚀 Iniciando procesamiento de facturas pendientes");
         
-        // Fetch all pending invoices from the database
+        // Consulta las facturas pendientes en la base de datos
         List<PendingInvoiceDto> pendingInvoices = invoiceRepository.findPendingInvoiceDtos();
-        log.info("Found {} pending invoices to process", pendingInvoices.size());
+        log.info("📋 Se encontraron {} facturas pendientes por procesar", pendingInvoices.size());
         
         if (pendingInvoices.isEmpty()) {
+            log.info("✅ No hay facturas pendientes para procesar");
             return CompletableFuture.completedFuture(null);
         }
         
-        // Group invoices by province
+        // Agrupa las facturas por provincia para procesamiento paralelo
         Map<String, List<PendingInvoiceDto>> invoicesByProvince = pendingInvoices.stream()
                 .collect(Collectors.groupingBy(PendingInvoiceDto::getProvincia));
         
-        log.info("Processing invoices for {} provinces: {}", 
+        log.info("🌍 Procesando facturas para {} provincias: {}", 
                 invoicesByProvince.size(), invoicesByProvince.keySet());
         
-        // Process each province's invoices in parallel using virtual threads
+        // Procesa cada provincia en paralelo usando hilos virtuales
         List<CompletableFuture<Void>> provinceFutures = invoicesByProvince.entrySet().stream()
                 .map(entry -> processInvoicesForProvince(entry.getKey(), entry.getValue()))
                 .toList();
         
-        // Combine all futures and return a single future that completes when all are done
+        // Combina todos los futuros y devuelve uno que se completa cuando todos terminan
         return CompletableFuture.allOf(provinceFutures.toArray(new CompletableFuture[0]))
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
-                        log.error("Error processing invoices", ex);
+                        log.error("❌ Error al procesar las facturas: {}", ex.getMessage(), ex);
+                        log.debug("Detalles del error en el procesamiento:", ex);
                     } else {
-                        log.info("Finished processing all pending invoices");
+                        log.info("✅ Procesamiento de facturas completado exitosamente");
                     }
                 });
     }
     
     /**
-     * Processes all invoices for a specific province in parallel.
+     * Procesa todas las facturas de una provincia específica en paralelo.
      * 
-     * @param province The name of the province
-     * @param invoices The list of invoices to process for this province
-     * @return A CompletableFuture that completes when all invoices for the province have been processed
+     * @param provincia Nombre de la provincia
+     * @param facturas Lista de facturas a procesar para esta provincia
+     * @return Un CompletableFuture que se completa cuando todas las facturas de la provincia han sido procesadas
      */
     @Async
-    protected CompletableFuture<Void> processInvoicesForProvince(String province, List<PendingInvoiceDto> invoices) {
-        log.info("Processing {} invoices for province: {}", invoices.size(), province);
+    protected CompletableFuture<Void> processInvoicesForProvince(String provincia, List<PendingInvoiceDto> facturas) {
+        log.info("🏙️  Procesando {} facturas para la provincia: {}", facturas.size(), provincia);
         
-        // Process each invoice in parallel using virtual threads
-        List<CompletableFuture<Void>> invoiceFutures = invoices.stream()
-                .map(this::processSingleInvoice)
+        // Procesa cada factura en paralelo usando hilos virtuales
+        List<CompletableFuture<Void>> facturasFuturas = facturas.stream()
+                .map(this::procesarFacturaIndividual)
                 .toList();
         
-        // Combine all futures for this province
-        return CompletableFuture.allOf(invoiceFutures.toArray(new CompletableFuture[0]))
+        // Combina todos los futuros de esta provincia
+        return CompletableFuture.allOf(facturasFuturas.toArray(new CompletableFuture[0]))
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
-                        log.error("Error processing invoices for province: " + province, ex);
+                        log.error("⚠️  Error al procesar facturas para la provincia {}: {}", 
+                                provincia, ex.getMessage());
+                        log.debug("Detalles del error para {}:", provincia, ex);
                     } else {
-                        log.info("Finished processing {} invoices for province: {}", 
-                                invoices.size(), province);
+                        log.info("✅ Se procesaron exitosamente {} facturas para la provincia: {}", 
+                                facturas.size(), provincia);
                     }
                 });
     }
     
     /**
-     * Processes a single invoice by sending it to the external API.
+     * Procesa una única factura enviándola a la API externa.
      * 
-     * @param invoice The invoice to process
-     * @return A CompletableFuture that completes when the invoice has been processed
+     * @param factura La factura a procesar
+     * @return Un CompletableFuture que se completa cuando la factura ha sido procesada
      */
-    private CompletableFuture<Void> processSingleInvoice(PendingInvoiceDto invoice) {
+    private CompletableFuture<Void> procesarFacturaIndividual(PendingInvoiceDto factura) {
         return CompletableFuture.runAsync(() -> {
             try {
-                externalApiClient.processInvoice(invoice.getIdSolicitudActos())
-                        .block(); // Blocking is OK here as we're in a virtual thread
+                log.debug("📤 Enviando factura {} a la API externa", factura.getIdSolicitudActos());
+                externalApiClient.processInvoice(factura.getIdSolicitudActos())
+                        .block(); // Se bloquea el hilo actual hasta que se complete la operación
+                log.debug("✅ Factura {} procesada exitosamente", factura.getIdSolicitudActos());
             } catch (Exception e) {
-                log.error("Error processing invoice {}: {}", 
-                        invoice.getIdSolicitudActos(), e.getMessage());
-                // The error is already logged by the client, we just need to handle it gracefully
-                // The record will be retried in the next scheduler run since we don't update the status
+                log.error("❌ Error al procesar la factura {}: {}", 
+                        factura.getIdSolicitudActos(), e.getMessage());
+                log.debug("Detalles del error en la factura {}:", factura.getIdSolicitudActos(), e);
+                // El error ya fue registrado, se maneja de forma elegante
+                // El registro se reintentará en la siguiente ejecución del programador
             }
         });
     }

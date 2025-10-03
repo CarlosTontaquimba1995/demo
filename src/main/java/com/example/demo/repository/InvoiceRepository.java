@@ -1,22 +1,29 @@
 package com.example.demo.repository;
 
-import com.example.demo.dto.PendingInvoiceDto;
 import com.example.demo.entity.FacturasElectronicas;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
 /**
- * Repository for accessing invoice data from the database.
+ * Repositorio para el acceso a datos de facturas electrónicas.
+ * Proporciona métodos para consultar y gestionar facturas pendientes de
+ * procesar.
+ * 
+ * La implementación personalizada se encuentra en
+ * {@link InvoiceRepositoryCustom}.
  */
-@Repository
-public interface InvoiceRepository extends JpaRepository<FacturasElectronicas, Long> {
+public interface InvoiceRepository extends JpaRepository<FacturasElectronicas, Long>, InvoiceRepositoryCustom {
     
     /**
-     * Fetches all pending invoices that need to be processed.
-     * @return List of Object arrays containing the query results
+     * Recupera todas las facturas pendientes de procesar.
+     * Consulta las facturas que no han sido marcadas como 'COMPLETADO' o cuyo
+     * estado es nulo.
+     * 
+     * @return Lista de arreglos de objetos con los resultados de la consulta
+     * @throws org.springframework.dao.DataAccessException si ocurre un error al
+     *                                                     acceder a los datos
      */
     @Query(nativeQuery = true, value = """
         SELECT 
@@ -28,17 +35,4 @@ public interface InvoiceRepository extends JpaRepository<FacturasElectronicas, L
         INNER JOIN [PESNOT].[UBI].[Notarias] n ON n.idNotaria = sa.idNotaria
         WHERE fe.factEstadoFactura IS NULL OR fe.factEstadoFactura <> 'COMPLETADO'""")
     List<Object[]> findPendingInvoices();
-    
-    /**
-     * Maps the raw query results to PendingInvoiceDto objects
-     */
-    default List<PendingInvoiceDto> findPendingInvoiceDtos() {
-        return findPendingInvoices().stream()
-            .map(row -> PendingInvoiceDto.builder()
-                .idSolicitudActos(((Number)row[0]).longValue())
-                .factEstadoFactura((String) row[1])
-                .provincia((String) row[2])
-                .build())
-            .toList();
-    }
 }

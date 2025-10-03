@@ -8,45 +8,62 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Scheduler that triggers the processing of pending invoices at regular
- * intervals.
- * Uses a processing lock to prevent concurrent execution of the same batch.
+ * Programador que inicia el procesamiento de facturas pendientes en intervalos
+ * regulares.
+ * Utiliza un bloqueo de procesamiento para evitar la ejecución concurrente del
+ * mismo lote.
+ * 
+ * Características principales:
+ * - Ejecución programada cada 5 segundos
+ * - Prevención de procesamiento duplicado
+ * - Manejo seguro de hilos
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class InvoiceProcessingScheduler {
 
+    // Servicio que contiene la lógica de procesamiento de facturas
     private final InvoiceProcessingService invoiceProcessingService;
+
+    // Bandera atómica para controlar el bloqueo de procesamiento
     private final AtomicBoolean isProcessing = new AtomicBoolean(false);
 
     /**
-     * Scheduler that runs every 5 seconds to process pending invoices.
-     * The method prevents concurrent execution to avoid duplicate processing.
+     * Método programado que se ejecuta cada 5 segundos para procesar facturas
+     * pendientes.
+     * Implementa un mecanismo de bloqueo para evitar el procesamiento concurrente.
+     * 
+     * Flujo de ejecución:
+     * 1. Verifica si ya hay un proceso en ejecución
+     * 2. Si no hay proceso activo, inicia el procesamiento
+     * 3. Al finalizar, libera el bloqueo independientemente del resultado
      */
-    @Scheduled(fixedRate = 5000) // Run every 5 seconds
+    @Scheduled(fixedRate = 5000) // Se ejecuta cada 5 segundos
     public void processPendingInvoices() {
-        // Skip if processing is already in progress
+        // Verifica y adquiere el bloqueo de procesamiento de forma atómica
         if (!isProcessing.compareAndSet(false, true)) {
-            log.debug("Skipping: Another invoice processing batch is already running");
+            log.debug("Se omite ejecución: Ya hay un lote de facturas en proceso");
             return;
         }
 
-        log.debug("Starting invoice processing batch");
+        log.info("Iniciando proceso de facturas pendientes");
         
         try {
-            // Process all pending invoices
+            // Procesa todas las facturas pendientes
             invoiceProcessingService.processAllPendingInvoices()
                     .whenComplete((result, ex) -> {
-                        // Always release the processing lock
+                        // Siempre libera el bloqueo de procesamiento
                         isProcessing.set(false);
 
                         if (ex != null) {
-                            log.error("Error in scheduled invoice processing", ex);
+                            log.error("❌ Error durante el procesamiento de facturas: {}", ex.getMessage(), ex);
+                            log.debug("Detalles del error en el procesamiento de facturas:", ex);
                         }
                     });
         } catch (Exception e) {
-            log.error("Unexpected error in invoice processing scheduler", e);
+            log.error("❌ Error inesperado en el programador de facturas: {}", e.getMessage(), e);
+            log.debug("Detalles del error inesperado:", e);
         }
     }
 }
