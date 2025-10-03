@@ -115,24 +115,36 @@ public class ExternalApiClient {
 
     /**
      * Ejecuta la llamada a la API con los parámetros proporcionados.
+     * Aplica políticas de resiliencia como Circuit Breaker, Rate Limiting y Reintentos.
+     * 
+     * @param context Contexto con la información necesaria para la llamada
+     * @return Mono<Void> que se completa cuando la operación finaliza exitosamente
      */
     private Mono<Void> executeApiCall(ApiRequestContext context) {
-        // En producción, descomentar este bloque para habilitar las llamadas reales
-        /*
-         * return webClient.post()
-         * .uri(context.url())
-         * .contentType(MediaType.APPLICATION_JSON)
-         * .header("Authorization", "Bearer " + context.token())
-         * .bodyValue(context.requestBody())
-         * .retrieve()
-         * .bodyToMono(Void.class)
-         * .timeout(Duration.ofMillis(timeoutMs));
-         */
+        // Crear el flujo reactivo para la llamada a la API
+        Mono<Void> apiCall = Mono.defer(() -> {
+            log.debug("🔹 Preparando llamada a la API para: {}", context.url());
+            
+            // Llamada real a la API externa
+            return webClient.post()
+                .uri(context.url())
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + context.token())
+                .bodyValue(context.requestBody())
+                .retrieve()
+                .bodyToMono(Void.class);
+        });
 
-        // Modo simulación (solo para pruebas)
-        log.info("🔄 Modo prueba: Simulando envío de factura ID: {}",
-                context.requestBody().replaceAll("\\D", ""));
-        return Mono.empty();
+        // Aplicar políticas de resiliencia
+        return context.applyResiliencePolicies(
+                apiCall,
+                circuitBreakerRegistry,
+                rateLimiterRegistry,
+                retryRegistry)
+                .timeout(Duration.ofMillis(timeoutMs))
+                .doOnSubscribe(s -> log.debug("▶️ Iniciando llamada a la API"))
+                .doOnSuccess(v -> log.debug("✅ Llamada a la API completada exitosamente"))
+                .doOnError(e -> log.error("❌ Error en la llamada a la API: {}", e.getMessage()));
     }
 
     /**
