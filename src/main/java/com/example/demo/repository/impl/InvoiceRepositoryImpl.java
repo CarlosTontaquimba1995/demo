@@ -1,7 +1,6 @@
 package com.example.demo.repository.impl;
 
 import com.example.demo.dto.PendingInvoiceDto;
-import com.example.demo.entity.FacturasElectronicas;
 import com.example.demo.repository.InvoiceRepositoryCustom;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
