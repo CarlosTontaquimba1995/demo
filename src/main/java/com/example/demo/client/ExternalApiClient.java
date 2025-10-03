@@ -125,14 +125,21 @@ public class ExternalApiClient {
         Mono<Void> apiCall = Mono.defer(() -> {
             log.debug("🔹 Preparando llamada a la API para: {}", context.url());
             
-            // Llamada real a la API externa
-            return webClient.post()
-                .uri(context.url())
-                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                .header("Authorization", "Bearer " + context.token())
-                .bodyValue(context.requestBody())
-                .retrieve()
-                .bodyToMono(Void.class);
+            // Modo simulación (sin conexión a API real)
+            log.info("🔄 Modo prueba: Simulando envío de factura ID: {}",
+                    context.requestBody().replaceAll("\\D", ""));
+            return Mono.empty();
+
+            /*
+             * // Implementación real de la llamada a la API (comentada para pruebas)
+             * return webClient.post()
+             * .uri(context.url())
+             * .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+             * .header("Authorization", "Bearer " + context.token())
+             * .bodyValue(context.requestBody())
+             * .retrieve()
+             * .bodyToMono(Void.class);
+             */
         });
 
         // Aplicar políticas de resiliencia
