@@ -30,6 +30,22 @@ spring:
         hibernate.connection.default_schema: dbo
 
 # Resilience4j Configuration
+# Application Configuration
+app:
+  security:
+    oauth2:
+      token:
+        url: https://sso-desa.funcionjudicial.gob.ec/realms/notarial/protocol/openid-connect/token
+        client-id: cj-web-app
+        username: evaluaciones-funcion-judicial
+        password: Pesnot2024.
+        refresh-offset-seconds: 60  # 1 minute before expiration
+        refresh-check-interval-ms: 300000  # 5 minutes
+  external-api:
+    base-url: https://desa-api-pesnot.funcionjudicial.gob.ec/SRI-SERVICE/api/sri/master/process-invoice
+    timeout-ms: 5000
+
+# Resilience4j Configuration
 resilience4j:
   circuitbreaker:
     configs:
@@ -55,17 +71,6 @@ resilience4j:
       default:
         maxConcurrentCalls: 100
         maxWaitDuration: 0
-
-# External API Configuration
-app:
-  external-api:
-    base-url: https://desa-api-pesnot.funcionjudicial.gob.ec/SRI-SERVICE/api/sri/master/process-invoice
-    timeout-ms: 5000
-  auth:
-    token-url: https://sso-desa.funcionjudicial.gob.ec/realms/notarial/protocol/openid-connect/token
-    client-id: cj-web-app
-    username: evaluaciones-funcion-judicial
-    password: Pesnot2024.
 
 # Actuator for monitoring
 management:

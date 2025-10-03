@@ -1,5 +1,9 @@
 package com.example.demo.client;
 
+import com.example.demo.config.OAuth2TokenProperties;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -8,9 +12,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.JsonNode;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -31,14 +32,6 @@ import java.util.concurrent.atomic.AtomicReference;
 @RequiredArgsConstructor
 public class TokenService {
 
-    // Configuración
-    private static final String TOKEN_URL = "https://sso-desa.funcionjudicial.gob.ec/realms/notarial/protocol/openid-connect/token";
-    private static final String CLIENT_ID = "cj-web-app";
-    private static final String USERNAME = "evaluaciones-funcion-judicial";
-    private static final String PASSWORD = "Pesnot2024.";
-    private static final long TOKEN_REFRESH_OFFSET_SECONDS = 60; // 1 minuto antes de la expiración
-    private static final long TOKEN_REFRESH_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
-    
     // Estado del token
     private final AtomicReference<String> accessToken = new AtomicReference<>();
     private final AtomicReference<Instant> tokenExpiration = new AtomicReference<>(Instant.MIN);
@@ -46,6 +39,7 @@ public class TokenService {
     
     // Dependencias
     private final WebClient webClient;
+    private final OAuth2TokenProperties tokenProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -93,7 +87,7 @@ public class TokenService {
         }
         
         // Check if token will expire within the refresh offset
-        boolean isValid = now.plusSeconds(TOKEN_REFRESH_OFFSET_SECONDS).isBefore(expiration);
+        boolean isValid = now.plusSeconds(tokenProperties.getRefreshOffsetSeconds()).isBefore(expiration);
         
         if (isValid) {
             Duration timeLeft = Duration.between(now, expiration);
@@ -113,7 +107,7 @@ public class TokenService {
     /**
      * Programa la renovación automática del token.
      */
-    @Scheduled(fixedDelay = TOKEN_REFRESH_CHECK_INTERVAL_MS)
+    @Scheduled(fixedDelayString = "${app.security.oauth2.token.refresh-check-interval-ms}")
     public void scheduleTokenRefresh() {
         if (!isTokenValid(Instant.now())) {
             log.debug("Iniciando renovación programada de token...");
@@ -142,17 +136,18 @@ public class TokenService {
                 return Mono.just(accessToken.get());
             }
             
-            log.info("Requesting new access token from {}", TOKEN_URL);
+            log.info("Requesting new access token from {}", tokenProperties.getUrl());
             
             String formData = String.format(
                 "grant_type=password&client_id=%s&username=%s&password=%s",
-                CLIENT_ID, USERNAME, PASSWORD
+                    tokenProperties.getClientId(), tokenProperties.getUsername(), tokenProperties.getPassword()
             );
             
-            log.debug("Sending token request with client_id: {} and username: {}", CLIENT_ID, USERNAME);
+            log.debug("Sending token request with client_id: {} and username: {}",
+                    tokenProperties.getClientId(), tokenProperties.getUsername());
             
             return webClient.post()
-                .uri(TOKEN_URL)
+                    .uri(tokenProperties.getUrl())
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .accept(MediaType.APPLICATION_JSON)
                 .header("Cookie", "BIGipServerKEYCL_P_EVALUACION_8080=!NSHvquXABmxiVeCbmGc3BFjSZLqm0fM2ZtrUnJS9AyI87O9YFNI5+l41WAmTdJSm2Rj6W12SWWAza/A=")
