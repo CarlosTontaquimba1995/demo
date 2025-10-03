@@ -61,6 +61,11 @@ app:
   external-api:
     base-url: https://desa-api-pesnot.funcionjudicial.gob.ec/SRI-SERVICE/api/sri/master/process-invoice
     timeout-ms: 5000
+  auth:
+    token-url: https://sso-desa.funcionjudicial.gob.ec/realms/notarial/protocol/openid-connect/token
+    client-id: cj-web-app
+    username: evaluaciones-funcion-judicial
+    password: Pesnot2024.
 
 # Actuator for monitoring
 management:

@@ -4,7 +4,6 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
-import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
 import io.github.resilience4j.reactor.ratelimiter.operator.RateLimiterOperator;
 import io.github.resilience4j.reactor.retry.RetryOperator;
@@ -28,10 +27,18 @@ import java.time.Duration;
 @RequiredArgsConstructor
 public class ExternalApiClient {
 
+    @SuppressWarnings("unused") // Will be used when API calls are enabled
     private final WebClient webClient;
+    @SuppressWarnings("unused") // Will be used when API calls are enabled
     private final CircuitBreakerRegistry circuitBreakerRegistry;
+    @SuppressWarnings("unused") // Will be used when API calls are enabled
     private final RateLimiterRegistry rateLimiterRegistry;
+    @SuppressWarnings("unused") // Will be used when API calls are enabled
     private final RetryRegistry retryRegistry;
+    private final TokenService tokenService;
+
+    @Value("${app.external-api.base-url}")
+    private String baseUrl;
 
     @Value("${app.external-api.timeout-ms:5000}")
     private long timeoutMs;
@@ -43,37 +50,62 @@ public class ExternalApiClient {
      * @return A Mono that completes when the request is done
      */
     public Mono<Void> processInvoice(Long idSolicitudActos) {
-        log.debug("Sending request to process invoice: {}", idSolicitudActos);
-        
-        CircuitBreaker circuitBreaker = circuitBreakerRegistry.circuitBreaker("externalApi");
-        RateLimiter rateLimiter = rateLimiterRegistry.rateLimiter("externalApi");
-        Retry retry = retryRegistry.retry("externalApi");
-        
-        return Mono.defer(() -> makeApiCall(idSolicitudActos))
-                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
-                .transformDeferred(RateLimiterOperator.of(rateLimiter))
-                .transformDeferred(RetryOperator.of(retry))
-                .onErrorResume(RequestNotPermitted.class, e -> {
-                    log.warn("Request not permitted by rate limiter for invoice {}: {}", idSolicitudActos, e.getMessage());
-                    return Mono.error(new RuntimeException("Rate limit exceeded for invoice: " + idSolicitudActos));
-                });
-    }
-    
-    private Mono<Void> makeApiCall(Long idSolicitudActos) {
-        return webClient.post()
-                .uri("/{idSolicitudActos}", idSolicitudActos)
-                .contentType(MediaType.APPLICATION_JSON)
-                .retrieve()
-                .onStatus(
-                    status -> !status.is2xxSuccessful(),
-                    response -> {
-                        log.error("Failed to process invoice {}: {}", idSolicitudActos, response.statusCode());
-                        return Mono.error(new RuntimeException("Failed to process invoice: " + response.statusCode()));
-                    }
-                )
-                .bodyToMono(Void.class)
+        log.debug("Preparing to process invoice: {}", idSolicitudActos);
+
+        return tokenService.getAccessToken()
+                .flatMap(token -> {
+                    String url = String.format("%s/%d", baseUrl, idSolicitudActos);
+                    String requestBody = "{\"idSolicitudActos\": " + idSolicitudActos + "}";
+
+                    // Log the request details in a clean format
+                    log.info("""
+                                                        \n=== API Request Details (Dry Run) ===
+                            URL: {}
+                            Method: POST
+                            Headers:
+                              Authorization: Bearer {}
+                              Content-Type: application/json
+                            Request Body:
+                            {}
+                            ===============================""",
+                            url,
+                            token.substring(0, Math.min(20, token.length())) + "...",
+                            requestBody);
+
+                    log.info("Dry run complete - No API call was made for invoice ID: {}", idSolicitudActos);
+                    return Mono.<Void>empty();
+
+                    /*
+                     * Uncomment this block to enable actual API calls
+                     * log.info("Sending request to external API for invoice: {}",
+                     * idSolicitudActos);
+                     * return webClient.post()
+                     * .uri(url)
+                     * .header("Authorization", "Bearer " + token)
+                     * .contentType(MediaType.APPLICATION_JSON)
+                     * .bodyValue(requestBody)
+                     * .retrieve()
+                     * .onStatus(
+                     * status -> status.is4xxClientError() || status.is5xxServerError(),
+                     * response -> response.bodyToMono(String.class)
+                     * .flatMap(error -> {
+                     * log.error("Error processing invoice {}: {}", idSolicitudActos, error);
+                     * return Mono.error(new RuntimeException(
+                     * "Failed to process invoice: " + response.statusCode()));
+                     * }))
+                     * .bodyToMono(Void.class)
+                     * .transformDeferred(CircuitBreakerOperator.of(circuitBreakerRegistry.
+                     * circuitBreaker("externalApi")))
+                     * .transformDeferred(RateLimiterOperator.of(rateLimiterRegistry.rateLimiter(
+                     * "externalApi")))
+                     * .transformDeferred(RetryOperator.of(retryRegistry.retry("externalApi")));
+                     */
+                })
                 .timeout(Duration.ofMillis(timeoutMs))
                 .doOnSuccess(v -> log.info("Successfully processed invoice: {}", idSolicitudActos))
-                .doOnError(e -> log.error("Error processing invoice: {}", idSolicitudActos, e));
+                .onErrorResume(e -> {
+                    log.error("Error in invoice processing: {}", idSolicitudActos, e);
+                    return Mono.error(new RuntimeException("Failed to process invoice: " + e.getMessage(), e));
+                });
     }
 }
