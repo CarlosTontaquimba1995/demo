@@ -1,0 +1,87 @@
+spring:
+  application:
+    name: notarial-orchestrator
+  
+  # Enable Virtual Threads
+  threads:
+    virtual:
+      enabled: true
+
+  # Database Configuration
+  datasource:
+    url: jdbc:sqlserver://10.1.27.16:1435;database=NOTARIAL_JAVA;instanceName=DESA07;encrypt=false
+    username: DESA_PESNOT24
+    password: dEpesNOT2024*
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+  
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.SQLServer2016Dialect
+        format_sql: true
+        hbm2ddl.auto: none
+        default_schema: dbo
+        physical_naming_strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+        implicit_naming_strategy: org.hibernate.boot.model.naming.ImplicitNamingStrategyLegacyJpaImpl
+        jakarta.persistence.schema-generation.database.action: none
+        hibernate.connection.default_schema: dbo
+
+# Resilience4j Configuration
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 20
+        permittedNumberOfCallsInHalfOpenState: 5
+        waitDurationInOpenState: 30s
+        failureRateThreshold: 50
+        registerHealthIndicator: true
+  ratelimiter:
+    configs:
+      default:
+        limitForPeriod: 100
+        limitRefreshPeriod: 1s
+        timeoutDuration: 1s
+  retry:
+    configs:
+      default:
+        maxAttempts: 3
+        waitDuration: 100ms
+  bulkhead:
+    configs:
+      default:
+        maxConcurrentCalls: 100
+        maxWaitDuration: 0
+
+# External API Configuration
+app:
+  external-api:
+    base-url: https://desa-api-pesnot.funcionjudicial.gob.ec/SRI-SERVICE/api/sri/master/process-invoice
+    timeout-ms: 5000
+
+# Actuator for monitoring
+management:
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,circuitbreakers,ratelimiters
+  health:
+    circuitbreakers:
+      enabled: true
+    ratelimiters:
+      enabled: true
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    org.springframework.web: INFO
+    com.example.demo: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
