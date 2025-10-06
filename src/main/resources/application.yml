@@ -1,3 +1,49 @@
+server:
+  port: 8081
+  
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,info,prometheus,circuitbreakers,ratelimiters
+  metrics:
+    enable:
+      kafka: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+    web:
+      server:
+        request:
+          autotime:
+            enabled: true
+  health:
+    kafka:
+      enabled: true
+    diskspace:
+      enabled: true
+    db:
+      enabled: true
+    circuitbreakers:
+      enabled: true
+    ratelimiters:
+      enabled: true
+  endpoint:
+    health:
+      show-details: always
+
+# Configuración de Logs
+logging:
+  level:
+    root: INFO
+    org.springframework.web: INFO
+    factura.flow: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.springframework.kafka: INFO
+    org.apache.kafka: WARN
+    org.springframework.retry: DEBUG
+
 spring:
   application:
     name: notarial-orchestrator
@@ -13,6 +59,12 @@ spring:
     username: DESA_PESNOT24
     password: dEpesNOT2024*
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
   
   jpa:
     hibernate:
@@ -23,15 +75,102 @@ spring:
         dialect: org.hibernate.dialect.SQLServer2016Dialect
         format_sql: true
         hbm2ddl.auto: none
-        default_schema: dbo
         physical_naming_strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
         implicit_naming_strategy: org.hibernate.boot.model.naming.ImplicitNamingStrategyLegacyJpaImpl
+        lob:
+          non_contextual_creation: true
         jakarta.persistence.schema-generation.database.action: none
         hibernate.connection.default_schema: dbo
 
-# Configuración de Resilience4j
+  # Configuración de Kafka
+  kafka:
+    # Configuración de seguridad
+    security:
+      protocol: ${KAFKA_SECURITY_PROTOCOL:SSL}
+      ssl:
+        trust-store-location: ${KAFKA_SSL_TRUSTSTORE_LOCATION:classpath:kafka.client.truststore.jks}
+        trust-store-password: ${KAFKA_SSL_TRUSTSTORE_PASSWORD:changeit}
+        key-store-location: ${KAFKA_SSL_KEYSTORE_LOCATION:classpath:kafka.client.keystore.jks}
+        key-store-password: ${KAFKA_SSL_KEYSTORE_PASSWORD:changeit}
+        key-password: ${KAFKA_SSL_KEY_PASSWORD:changeit}
+    
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    
+    # Configuración del consumidor
+    consumer:
+      group-id: ${KAFKA_GROUP_ID:factura-group}
+      client-id: ${spring.application.name}-${random.uuid}
+      auto-offset-reset: latest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+        spring.json.use.type.headers: false
+        max.poll.interval.ms: 300000  # 5 minutos
+        session.timeout.ms: 45000     # 45 segundos
+        heartbeat.interval.ms: 15000   # 15 segundos
+        request.timeout.ms: 50000     # 50 segundos
+        max.poll.records: 500         # Número de registros por poll
+        fetch.min.bytes: 1048576      # 1MB
+        fetch.max.wait.ms: 500
+        max.partition.fetch.bytes: 1048576  # 1MB
+        connections.max.idle.ms: 540000  # 9 minutos
+        metadata.max.age.ms: 300000     # 5 minutos
+        reconnect.backoff.ms: 50
+        retry.backoff.ms: 100
+        
+    # Configuración del productor
+    producer:
+      acks: all
+      retries: 5
+      batch-size: 16384
+      buffer-memory: 33554432  # 32MB
+      compression-type: gzip
+      ssl.key.password: ${KAFKA_SSL_KEY_PASSWORD:}
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.trusted.packages: "factura.flow.dto"
+        spring.json.use.type.headers: false
+        spring.json.add.type.headers: false
+    listener:
+      ack-mode: MANUAL
+      missing-topics-fatal: false
+      type: batch
+      concurrency: 3
+
+  # Configuración de Resilience4j
+  resilience4j.retry:
+    configs:
+      default:
+        maxAttempts: 3
+        waitDuration: 1s
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
+  resilience4j.circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 10
+        permittedNumberOfCallsInHalfOpenState: 3
+        slidingWindowType: COUNT_BASED
+        minimumNumberOfCalls: 5
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+    consumer:
+      group-id: ${spring.application.name}-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "factura.flow.dto"
+        spring.json.use.type.headers: false
+
 # Configuración de la Aplicación
 app:
+  kafka:
+      processing: factura.processing
+      dlq: factura.dlq
   security:
     oauth2:
       token:
@@ -39,8 +178,8 @@ app:
         client-id: cj-web-app
         username: evaluaciones-funcion-judicial
         password: Pesnot2024.
-        refresh-offset-seconds: 60  # 1 minuto antes de la expiración
-        refresh-check-interval-ms: 300000  # 5 minutos
+        refresh-offset-seconds: 60
+        refresh-check-interval-ms: 300000
   external-api:
     base-url: https://desa-api-pesnot.funcionjudicial.gob.ec/SRI-SERVICE/api/sri/master/process-invoice
     timeout-ms: 5000
@@ -73,25 +212,3 @@ resilience4j:
         maxWaitDuration: 0
 
 # Configuración de Actuator para monitoreo
-management:
-  endpoint:
-    health:
-      show-details: always
-  endpoints:
-    web:
-      exposure:
-        include: health,metrics,circuitbreakers,ratelimiters
-  health:
-    circuitbreakers:
-      enabled: true
-    ratelimiters:
-      enabled: true
-
-# Configuración de Logs
-logging:
-  level:
-    root: INFO
-    org.springframework.web: INFO
-    factura.flow: DEBUG
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE

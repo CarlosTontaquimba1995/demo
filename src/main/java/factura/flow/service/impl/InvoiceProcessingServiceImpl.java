@@ -4,11 +4,11 @@ import factura.flow.client.ExternalApiClient;
 import factura.flow.dto.PendingInvoiceDto;
 import factura.flow.repository.InvoiceRepository;
 import factura.flow.service.InvoiceProcessingService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import factura.flow.service.kafka.InvoiceProducer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -17,20 +17,28 @@ import java.util.stream.Collectors;
 
 /**
  * Implementación del servicio de procesamiento de facturas.
- * 
+ *
  * Esta implementación procesa facturas en paralelo agrupadas por provincia
  * utilizando hilos virtuales para máxima eficiencia.
  */
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class InvoiceProcessingServiceImpl implements InvoiceProcessingService {
+
+    private static final Logger log = LoggerFactory.getLogger(InvoiceProcessingServiceImpl.class);
 
     private final InvoiceRepository invoiceRepository;
     private final ExternalApiClient externalApiClient;
+    private final InvoiceProducer invoiceProducer;
+
+    public InvoiceProcessingServiceImpl(InvoiceRepository invoiceRepository,
+            ExternalApiClient externalApiClient,
+            InvoiceProducer invoiceProducer) {
+        this.invoiceRepository = invoiceRepository;
+        this.externalApiClient = externalApiClient;
+        this.invoiceProducer = invoiceProducer;
+    }
 
     @Override
-    @Transactional(readOnly = true)
     public CompletableFuture<Void> processAllPendingInvoices() {
         log.info("🚀 Iniciando procesamiento de facturas pendientes");
         
@@ -83,25 +91,17 @@ public class InvoiceProcessingServiceImpl implements InvoiceProcessingService {
                 });
     }
     
+
     @Override
     @Async
     public CompletableFuture<Void> procesarFacturaIndividual(PendingInvoiceDto factura) {
-        return CompletableFuture.runAsync(() -> {
-            try {
-                log.debug("📝 Procesando factura ID: {}", factura.getIdSolicitudActos());
-                
-                // Simulamos un procesamiento con un pequeño retraso
-                Thread.sleep(100);
-                
-                // Llamada al servicio externo para procesar la factura
-                externalApiClient.processInvoice(factura.getIdSolicitudActos())
-                    .block(); // Bloqueamos ya que estamos en un contexto asíncrono manejado por CompletableFuture
-                
-                log.debug("✅ Factura {} procesada exitosamente", factura.getIdSolicitudActos());
-            } catch (Exception e) {
-                log.error("❌ Error al procesar la factura {}: {}", factura.getIdSolicitudActos(), e.getMessage());
-                throw new RuntimeException("Error al procesar la factura: " + factura.getIdSolicitudActos(), e);
-            }
-        });
+        log.debug("📤 Encolando factura ID: {} para procesamiento", factura.getIdSolicitudActos());
+
+        // Enviar la factura a Kafka para su procesamiento asíncrono
+        invoiceProducer.sendInvoiceForProcessing(factura);
+
+        // Retornar un futuro completado ya que el procesamiento real será manejado por
+        // el consumidor de Kafka
+        return CompletableFuture.completedFuture(null);
     }
 }

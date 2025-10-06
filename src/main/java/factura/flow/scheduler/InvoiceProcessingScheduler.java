@@ -40,7 +40,7 @@ public class InvoiceProcessingScheduler {
      * 2. Si no hay proceso activo, inicia el procesamiento
      * 3. Al finalizar, libera el bloqueo independientemente del resultado
      */
-    @Scheduled(fixedRate = 5000) // Se ejecuta cada 5 segundos
+    @Scheduled(fixedRate = 5000) // Se ejecuta cada 5 segundos (60000 cada minuto)
     public void processPendingInvoices() {
         // Verifica y adquiere el bloqueo de procesamiento de forma atómica
         if (!isProcessing.compareAndSet(false, true)) {
