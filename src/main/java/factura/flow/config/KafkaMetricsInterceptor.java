@@ -40,8 +40,13 @@ public class KafkaMetricsInterceptor implements ProducerInterceptor<String, Obje
             .register(meterRegistry);
     }
 
+    // Mapa para almacenar los tiempos de inicio de producción
+    private final ThreadLocal<Long> produceStartTime = new ThreadLocal<>();
+
     @Override
     public ProducerRecord<String, Object> onSend(ProducerRecord<String, Object> record) {
+        // Registrar el tiempo de inicio cuando se envía el mensaje
+        produceStartTime.set(System.currentTimeMillis());
         return record;
     }
 
@@ -49,13 +54,26 @@ public class KafkaMetricsInterceptor implements ProducerInterceptor<String, Obje
     public void onAcknowledgement(RecordMetadata metadata, Exception exception) {
         if (exception == null) {
             producedMessagesCounter.increment();
+
+            // Registrar la latencia de producción
+            Long startTime = produceStartTime.get();
+            if (startTime != null) {
+                long latency = System.currentTimeMillis() - startTime;
+                produceLatencyTimer.record(latency, java.util.concurrent.TimeUnit.MILLISECONDS);
+                produceStartTime.remove();
+            }
         }
     }
 
     @Override
     public ConsumerRecords<String, Object> onConsume(ConsumerRecords<String, Object> records) {
         if (!records.isEmpty()) {
+            long startTime = System.currentTimeMillis();
             consumedMessagesCounter.increment(records.count());
+
+            // Registrar la latencia de consumo
+            long latency = System.currentTimeMillis() - startTime;
+            consumeLatencyTimer.record(latency, java.util.concurrent.TimeUnit.MILLISECONDS);
         }
         return records;
     }

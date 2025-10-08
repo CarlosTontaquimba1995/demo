@@ -68,7 +68,7 @@ public class InvoiceProducer {
             throw new KafkaException("Error al enviar factura a Kafka", ex);
         }
     }
-
+    
     /**
      * Método de recuperación cuando se agotan los reintentos.
      * Envía el mensaje a la cola de mensajes fallidos (DLQ).
