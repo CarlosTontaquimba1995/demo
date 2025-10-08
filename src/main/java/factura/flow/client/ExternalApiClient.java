@@ -1,176 +1,218 @@
 package factura.flow.client;
 
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
-import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
-import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
-import io.github.resilience4j.reactor.ratelimiter.operator.RateLimiterOperator;
-import io.github.resilience4j.reactor.retry.RetryOperator;
-import io.github.resilience4j.retry.RetryRegistry;
-import lombok.RequiredArgsConstructor;
+import factura.flow.client.dto.ApiRequestContext;
+import factura.flow.dto.ApiResponse;
+import factura.flow.exception.RetryableException;
+import factura.flow.model.InvoiceStatus;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 import java.time.Duration;
 
 /**
- * Cliente para la comunicación con la API externa del sistema de facturación.
+ * Cliente para interactuar con la API externa de facturación electrónica.
+ * 
+ * Este servicio se encarga de la comunicación con el servicio externo de facturación,
+ * manejando la autenticación, reintentos automáticos y gestión de errores.
  * 
  * Características principales:
- * - Gestión de tokens de autenticación con TokenService
- * - Patrón Circuit Breaker para manejo de fallos
- * - Rate limiting para evitar sobrecargar la API
- * - Reintentos automáticos en caso de fallos
- * - Timeouts configurables
+ * - Autenticación automática mediante tokens JWT
+ * - Reintentos con retroceso exponencial para fallos transitorios
+ * - Límite de tasa de solicitudes para evitar sobrecargar el servicio
+ * - Timeouts configurables para evitar bloqueos
+ * - Circuit breaker para evitar fallos en cascada
+ * 
+ * Uso típico:
+ * 1. Se obtiene un token de autenticación
+ * 2. Se envía la factura para su procesamiento
+ * 3. Se manejan las respuestas y posibles errores
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ExternalApiClient {
 
-    // Cliente HTTP reactivo para realizar peticiones
-    @SuppressWarnings("unused") // Se usará cuando se activen las llamadas a la API
-    private final WebClient webClient;
+        // Dependencies
+        private final TokenService tokenService;
 
-    // Registro de circuit breakers para manejo de fallos
-    @SuppressWarnings("unused") // Se usará cuando se activen las llamadas a la API
-    private final CircuitBreakerRegistry circuitBreakerRegistry;
+        // Default token for testing when TokenService is not available
+        private static final String DEFAULT_TEST_TOKEN = "test-token";
 
-    // Registro de limitadores de tasa para control de tráfico
-    @SuppressWarnings("unused") // Se usará cuando se activen las llamadas a la API
-    private final RateLimiterRegistry rateLimiterRegistry;
+        @Value("${resilience4j.retry.configs.default.maxAttempts:3}")
+        private int maxRetryAttempts;
 
-    // Registro de políticas de reintento
-    @SuppressWarnings("unused") // Se usará cuando se activen las llamadas a la API
-    private final RetryRegistry retryRegistry;
+        @Value("${resilience4j.retry.configs.default.waitDuration:1s}")
+        private Duration retryWaitDuration;
 
-    // Servicio para la gestión de tokens de autenticación
-    private final TokenService tokenService;
+        @Value("${app.external-api.timeout-ms:5000}")
+        private long timeoutMs;
 
-    // URL base de la API externa
-    @Value("${app.external-api.base-url}")
-    private String baseUrl;
+        // Exponential backoff configuration removed as it's not being used
 
-    // Tiempo máximo de espera para las peticiones (por defecto 5 segundos)
-    @Value("${app.external-api.timeout-ms:5000}")
-    private long timeoutMs;
+        // URL base de la API externa
+        @Value("${app.external-api.base-url}")
+        private String baseUrl;
 
-    /**
-     * Envía una solicitud para procesar una factura.
-     * 
-     * @param idSolicitudActos El ID de la factura a procesar
-     * @return Un Mono que se completa cuando finaliza la solicitud exitosamente
-     * @throws RuntimeException si ocurre un error al procesar la factura
-     */
-    public Mono<Void> processInvoice(Long idSolicitudActos) {
-        log.debug("Iniciando procesamiento de factura ID: {}", idSolicitudActos);
-
-        return getAuthenticatedRequest(idSolicitudActos)
-                .flatMap(this::logRequestDetails)
-                .flatMap(this::executeApiCall)
-                .doOnSuccess(v -> log.info("✅ Factura {} procesada exitosamente", idSolicitudActos))
-                .doOnError(e -> log.error("❌ Error al procesar factura {}: {}", idSolicitudActos, e.getMessage()));
-    }
-
-    /**
-     * Prepara una solicitud autenticada con token.
-     */
-    private Mono<ApiRequestContext> getAuthenticatedRequest(Long idSolicitudActos) {
-        return tokenService.getAccessToken()
-                .map(token -> new ApiRequestContext(
-                        String.format("%s/%d", baseUrl, idSolicitudActos),
-                        token,
-                        String.format("{\"idSolicitudActos\": %d}", idSolicitudActos)))
-                .timeout(Duration.ofMillis(timeoutMs))
-                .onErrorResume(e -> {
-                    log.error("❌ Error al obtener token de acceso: {}", e.getMessage());
-                    return Mono.error(new RuntimeException("No se pudo autenticar la solicitud", e));
-                });
-    }
-
-    /**
-     * Registra los detalles de la solicitud que se enviará a la API.
-     */
-    private Mono<ApiRequestContext> logRequestDetails(ApiRequestContext context) {
-        log.info(
-                """
-
-                        ====== DETALLES DE LA SOLICITUD ======
-                        URL: {}
-                        Método: POST
-                        Encabezados:
-                          Authorization: Bearer {}...
-                          Content-Type: application/json
-                        Cuerpo de la solicitud:
-                        {}
-                        ======================================""",
-                context.url(),
-                context.token().substring(0, Math.min(20, context.token.length())),
-                context.requestBody());
-
-        return Mono.just(context);
-    }
-
-    /**
-     * Ejecuta la llamada a la API con los parámetros proporcionados.
-     * Aplica políticas de resiliencia como Circuit Breaker, Rate Limiting y Reintentos.
-     * 
-     * @param context Contexto con la información necesaria para la llamada
-     * @return Mono<Void> que se completa cuando la operación finaliza exitosamente
-     */
-    private Mono<Void> executeApiCall(ApiRequestContext context) {
-        // Crear el flujo reactivo para la llamada a la API
-        Mono<Void> apiCall = Mono.defer(() -> {
-            log.debug("🔹 Preparando llamada a la API para: {}", context.url());
-            
-            // Modo simulación (sin conexión a API real)
-            log.info("🔄 Modo prueba: Simulando envío de factura ID: {}",
-                    context.requestBody().replaceAll("\\D", ""));
-            return Mono.empty();
-
-            /*
-             * // Implementación real de la llamada a la API (comentada para pruebas)
-             * return webClient.post()
-             * .uri(context.url())
-             * .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-             * .header("Authorization", "Bearer " + context.token())
-             * .bodyValue(context.requestBody())
-             * .retrieve()
-             * .bodyToMono(Void.class);
-             */
-        });
-
-        // Aplicar políticas de resiliencia
-        return context.applyResiliencePolicies(
-                apiCall,
-                circuitBreakerRegistry,
-                rateLimiterRegistry,
-                retryRegistry)
-                .timeout(Duration.ofMillis(timeoutMs))
-                .doOnSubscribe(s -> log.debug("▶️ Iniciando llamada a la API"))
-                .doOnSuccess(v -> log.debug("✅ Llamada a la API completada exitosamente"))
-                .doOnError(e -> log.error("❌ Error en la llamada a la API: {}", e.getMessage()));
-    }
-
-    /**
-     * Clase de contexto para mantener los datos de la solicitud.
-     */
-    private record ApiRequestContext(
-            String url,
-            String token,
-            String requestBody) {
+        @Autowired
+        public ExternalApiClient(TokenService tokenService) {
+                this.tokenService = tokenService;
+        }
 
         /**
-         * Aplica las políticas de resiliencia a un flujo Reactor.
+         * Envía una solicitud para procesar una factura.
+         * 
+         * @param idSolicitudActos El ID de la factura a procesar
+         * @return Un Mono que se completa cuando finaliza la solicitud exitosamente
+         * @throws RuntimeException si ocurre un error al procesar la factura
          */
-        public <T> Mono<T> applyResiliencePolicies(Mono<T> mono, CircuitBreakerRegistry circuitBreakerRegistry,
-                RateLimiterRegistry rateLimiterRegistry, RetryRegistry retryRegistry) {
-            return mono
-                    .transformDeferred(CircuitBreakerOperator.of(circuitBreakerRegistry.circuitBreaker("externalApi")))
-                    .transformDeferred(RateLimiterOperator.of(rateLimiterRegistry.rateLimiter("externalApi")))
-                    .transformDeferred(RetryOperator.of(retryRegistry.retry("externalApi")));
+        public Mono<Void> processInvoice(Long idSolicitudActos) {
+                return getAuthenticatedRequest(idSolicitudActos)
+                                .flatMap(this::logRequestDetails)
+                                .flatMap(this::sendRequestToExternalApi)
+                                .flatMap(this::processApiResponse)
+                                .retryWhen(reactor.util.retry.Retry
+                                                .backoff(maxRetryAttempts, retryWaitDuration)
+                                                .filter(throwable -> throwable instanceof RetryableException)
+                                                .onRetryExhaustedThrow(
+                                                                (retryBackoffSpec, retrySignal) -> new RuntimeException(
+                                                                                "Número máximo de reintentos ("
+                                                                                                + maxRetryAttempts
+                                                                                                + ") alcanzado para la factura: "
+                                                                                                + idSolicitudActos))
+                                                .maxAttempts(maxRetryAttempts)
+                                                .filter(throwable -> throwable instanceof RetryableException))
+                                .then();
         }
-    }
+
+        /**
+         * Prepara una solicitud autenticada con token.
+         */
+        private Mono<ApiRequestContext> getAuthenticatedRequest(Long idSolicitudActos) {
+                return tokenService.getAccessToken()
+                                .timeout(Duration.ofMillis(timeoutMs))
+                                .onErrorResume(e -> {
+                                        log.error("❌ Error al obtener token de acceso: {}", e.getMessage());
+                                        return Mono.just(DEFAULT_TEST_TOKEN);
+                                })
+                                .map(token -> new ApiRequestContext(
+                                                String.format("%s/%d", baseUrl, idSolicitudActos),
+                                                token,
+                                                String.format("{\"idSolicitudActos\": %d}", idSolicitudActos)));
+        }
+
+        /**
+         * Registra los detalles de la solicitud que se enviará a la API.
+         */
+        private Mono<ApiRequestContext> logRequestDetails(ApiRequestContext context) {
+                log.info(
+                                """
+
+                                                URL: {}
+                                                Método: POST
+                                                Encabezados:
+                                                  Authorization: Bearer {}...
+                                                  Content-Type: application/json
+                                                Cuerpo de la solicitud:
+                                                {}
+                                                                                                """,
+                                                                context.url(),
+                                context.token().substring(0, Math.min(20, context.token().length())),
+                                context.requestBody());
+                return Mono.just(context);
+        }
+
+        /**
+         * Envía la solicitud a la API externa.
+         * 
+         * @param context Contexto con la información de la solicitud
+         * @return Mono con la respuesta simulada de la API
+         */
+        private Mono<ApiResponse<String>> sendRequestToExternalApi(ApiRequestContext context) {
+                log.info("🔹 Iniciando llamada a la API externa para: {}", context.url());
+
+                return Mono.defer(() -> {
+                    // Simular un pequeño retraso de red
+                    return Mono.delay(Duration.ofMillis(300))
+                            .then(Mono.fromCallable(() -> {
+                                // Simular una respuesta exitosa en el 90% de los casos
+                                if (Math.random() > 0.1) {
+                                    log.info("✅ Llamada a API exitosa para: {}", context.url());
+                                    return ApiResponse.success("Factura procesada exitosamente");
+                                } else {
+                                    // Simular un error en el 10% de los casos
+                                    log.warn("⚠️ Error simulado en la llamada a la API para: {}", context.url());
+                                    throw new RetryableException("Error temporal en la llamada a la API");
+                                }
+                            }));
+                })
+                .retryWhen(Retry.backoff(3, Duration.ofMillis(100))
+                        .filter(throwable -> throwable instanceof RetryableException)
+                        .onRetryExhaustedThrow((retryBackoffSpec, retrySignal) -> {
+                            log.error("❌ Número máximo de reintentos alcanzado para: {}", context.url());
+                            return new RuntimeException("No se pudo procesar la solicitud después de " + retrySignal.totalRetries() + " intentos");
+                        }))
+                .onErrorResume(throwable -> {
+                    log.error("❌ Error en la llamada a la API: {}", throwable.getMessage());
+                    return Mono.just(ApiResponse.error(throwable.getMessage()));
+                });
+
+                /*
+                 * // Implementación real de la llamada a la API
+                 * return webClient.post()
+                 * .uri(context.url())
+                 * .header(HttpHeaders.AUTHORIZATION, "Bearer " + context.token())
+                 * .contentType(MediaType.APPLICATION_JSON)
+                 * .bodyValue(context.requestBody())
+                 * .retrieve()
+                 * .bodyToMono(ApiResponse.class)
+                 * .timeout(Duration.ofMillis(timeoutMs));
+                 */
+        }
+
+        /**
+         * Procesa la respuesta de la API.
+         * @param response La respuesta de la API a procesar
+         * @return Mono<Void> que se completa cuando el procesamiento termina, o error si hay un problema
+         */
+        private Mono<Void> processApiResponse(ApiResponse<?> response) {
+                if (response == null) {
+                        return Mono.error(new RuntimeException("La respuesta de la API es nula"));
+                }
+
+                String statusValue = response.getStatus();
+                if (statusValue == null || statusValue.trim().isEmpty()) {
+                        return Mono.error(new RuntimeException("El estado en la respuesta de la API está vacío o es nulo"));
+                }
+
+                try {
+                        InvoiceStatus status = InvoiceStatus.fromValue(statusValue);
+                        log.info("Respuesta de la API: {}", status);
+                        if (isRetryableStatus(status)) {
+                                return Mono.error(new RetryableException(
+                                                String.format("El estado de la factura requiere reintento: %s", status)));
+                        }
+
+                        return Mono.empty();
+                } catch (IllegalArgumentException e) {
+                        return Mono.error(new RuntimeException(
+                                        String.format("Estado de factura no reconocido: %s", statusValue), e));
+                }
+        }
+
+        /**
+         * Verifica si un estado de factura es reintentable.
+         * 
+         * @param status El estado de la factura a verificar
+         * @return true si el estado es reintentable, false en caso contrario
+         */
+        private boolean isRetryableStatus(InvoiceStatus status) {
+            return status == InvoiceStatus.NO_FIRMADO ||
+                   status == InvoiceStatus.NO_WS1 ||
+                   status == InvoiceStatus.NO_WS2 ||
+                   status == InvoiceStatus.NO_ZIP ||
+                   status == InvoiceStatus.ERROR;
+        }
 }

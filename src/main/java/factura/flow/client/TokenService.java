@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import factura.flow.config.OAuth2TokenProperties;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -18,29 +17,52 @@ import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Servicio para la gestión de tokens de autenticación OAuth2 con persistencia.
+ * Servicio para la gestión del ciclo de vida de tokens de autenticación OAuth2.
+ * 
+ * Este servicio maneja de forma segura la obtención, almacenamiento en caché y renovación
+ * automática de tokens de acceso necesarios para autenticarse en los servicios externos.
  * 
  * Características principales:
- * - Almacenamiento en memoria del token hasta su expiración
- * - Renovación automática cuando el token está por expirar
- * - Caché thread-safe
- * - Renovación proactiva antes de la expiración
+ * - Almacenamiento seguro del token en memoria con AtomicReference para operaciones atómicas
+ * - Renovación automática cuando el token está próximo a expirar
+ * - Sincronización thread-safe para evitar condiciones de carrera
+ * - Renovación proactiva basada en un umbral configurable
+ * - Manejo de errores robusto con reintentos automáticos
+ * 
+ * Flujo típico:
+ * 1. Se solicita un token mediante getAccessToken()
+ * 2. Si el token existe y es válido, se retorna de la caché
+ * 3. Si está por expirar o no existe, se obtiene uno nuevo
+ * 4. El token se almacena en memoria con su tiempo de expiración
+ * 5. Un programador verifica periódicamente la validez del token
  */
 @Slf4j
 @Service
 @EnableScheduling
-@RequiredArgsConstructor
 public class TokenService {
 
-    // Estado del token
+    // Almacenamiento seguro del token de acceso con AtomicReference para operaciones atómicas
     private final AtomicReference<String> accessToken = new AtomicReference<>();
+    
+    // Tiempo de expiración del token actual
     private final AtomicReference<Instant> tokenExpiration = new AtomicReference<>(Instant.MIN);
+    
+    // Objeto para sincronización en la obtención de tokens
     private final Object tokenLock = new Object();
     
-    // Dependencias
+    // Cliente HTTP para realizar las peticiones de autenticación
     private final WebClient webClient;
+    
+    // Configuración de OAuth2 (URL, credenciales, etc.)
     private final OAuth2TokenProperties tokenProperties;
+    
+    // Mapeador JSON para procesar las respuestas del servidor de autenticación
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public TokenService(WebClient webClient, OAuth2TokenProperties tokenProperties) {
+        this.webClient = webClient;
+        this.tokenProperties = tokenProperties;
+    }
 
     /**
      * Obtiene un token de acceso válido.
@@ -219,13 +241,12 @@ public class TokenService {
             log.debug("Generated token (truncated): {} (length: {} chars)", 
                     tokenPreview, 
                     tokenLength);
-            
             return Mono.just(token);
             
         } catch (JsonProcessingException e) {
             log.error("Failed to parse token response: {}", e.getMessage());
-            log.debug("Response that caused parsing error: {}", response);
-            return Mono.error(new RuntimeException("Failed to parse token response: " + e.getMessage(), e));
+            log.error("Error al procesar la respuesta del token: {}", e.getMessage(), e);
+            return Mono.error(new RuntimeException("Error al procesar la respuesta del token: " + e.getMessage(), e));
         } catch (Exception e) {
             log.error("Unexpected error processing token response: {}", e.getMessage(), e);
             return Mono.error(e);
